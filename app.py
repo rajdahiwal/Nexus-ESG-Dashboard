@@ -30,7 +30,7 @@ demo_json = {
     "transparency_index": 42,
     "unmanaged_risk": {"inherent_exposure": 85, "policies_score": -15, "actions_score": -20, "results_score": -10, "final_unmanaged_risk": 40},
     "par_scores": {"Policies": 80, "Actions": 55, "Results": 35},
-    "materiality": [
+    "materiality":[
         {"topic": "Carbon Emissions", "financial_risk": 9, "world_impact": 8},
         {"topic": "Labor Rights", "financial_risk": 6, "world_impact": 9},
         {"topic": "Data Privacy", "financial_risk": 8, "world_impact": 4},
@@ -51,10 +51,13 @@ def extract_text_from_pdf(file):
 
 # --- HELPER FUNCTION: CALL NVIDIA Llama 3 via OpenAI SDK ---
 def analyze_esg_report(text, key):
-    # Point the OpenAI client to NVIDIA's servers!
+    # CLEAN THE KEY: This removes any accidental invisible spaces you pasted!
+    clean_key = key.strip()
+    
+    # Point the OpenAI client to NVIDIA's servers
     client = OpenAI(
       base_url = "https://integrate.api.nvidia.com/v1",
-      api_key = key
+      api_key = clean_key
     )
     
     prompt = f"""
@@ -77,7 +80,7 @@ def analyze_esg_report(text, key):
             "Actions": 50,
             "Results": 30
         }},
-        "materiality": [
+        "materiality":[
             {{"topic": "Extract Top Topic 1", "financial_risk": 8, "world_impact": 7}},
             {{"topic": "Extract Top Topic 2", "financial_risk": 6, "world_impact": 9}},
             {{"topic": "Extract Top Topic 3", "financial_risk": 5, "world_impact": 8}}
@@ -124,13 +127,18 @@ if analyze_btn:
             st.stop()
             
         with st.spinner("📖 Reading PDF and extracting text..."):
-            pdf_text = extract_text_from_pdf(uploaded_file)
+            try:
+                pdf_text = extract_text_from_pdf(uploaded_file)
+            except Exception as e:
+                st.error(f"❌ PDF Reading Error: The file might be corrupted or protected. Try a different PDF. Details: {e}")
+                st.stop()
             
         with st.spinner("🧠 NVIDIA Llama 3.3 analyzing report... (this takes 10-20 seconds)"):
             try:
                 data = analyze_esg_report(pdf_text, api_key)
             except Exception as e:
                 st.error(f"❌ AI Parsing Error: {e}")
+                st.info("💡 TIP: If you see a '401 Unauthorized' error, your API key is invalid, revoked, or typed incorrectly. Please generate a new key on the NVIDIA website.")
                 st.stop()
             
     st.success(f"✅ Analysis Complete for: **{data['company_name']}**")
@@ -145,7 +153,7 @@ if analyze_btn:
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+number",
             value = data["transparency_index"],
-            domain = {'x': [0, 1], 'y': [0, 1]},
+            domain = {'x':[0, 1], 'y': [0, 1]},
             gauge = {
                 'axis': {'range': [None, 100]},
                 'bar': {'color': "darkblue"},
@@ -184,8 +192,8 @@ if analyze_btn:
         ur = data["unmanaged_risk"]
         fig_waterfall = go.Figure(go.Waterfall(
             name = "Risk", orientation = "v",
-            measure = ["absolute", "relative", "relative", "relative", "total"],
-            x = ["Inherent Exposure", "Policies", "Actions", "Results", "Unmanaged Risk"],
+            measure =["absolute", "relative", "relative", "relative", "total"],
+            x =["Inherent Exposure", "Policies", "Actions", "Results", "Unmanaged Risk"],
             textposition = "outside",
             y = [ur["inherent_exposure"], ur["policies_score"], ur["actions_score"], ur["results_score"], ur["final_unmanaged_risk"]],
             connector = {"line":{"color":"rgb(63, 63, 63)"}},
