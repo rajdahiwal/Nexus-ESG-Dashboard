@@ -5,8 +5,8 @@ import plotly.graph_objects as go
 import json
 import time
 import PyPDF2
-import requests
 import re
+from openai import OpenAI
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Nexus ESG AI Benchmarking", page_icon="🌍", layout="wide")
@@ -19,7 +19,7 @@ st.markdown("Upload a company's sustainability report, and our AI agents will pa
 with st.sidebar:
     st.header("⚙️ Configuration")
     api_key = st.text_input("NVIDIA NIM API Key", type="password")
-    st.markdown("Powered by **NVIDIA NIM & Llama**")
+    st.markdown("Powered by **NVIDIA NIM & Llama 3.3 70B**")
     use_demo = st.checkbox("Enable Demo Mode (Instant Charts)", value=False)
     uploaded_file = st.file_uploader("Upload ESG Report (PDF)", type=["pdf"])
     analyze_btn = st.button("Run AI Analysis")
@@ -43,26 +43,25 @@ demo_json = {
 def extract_text_from_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
-    # Llama 128k context can handle massive text. We'll grab 15 pages.
+    # Extract 15 pages 
     num_pages = min(15, len(reader.pages))
     for i in range(num_pages):
         text += reader.pages[i].extract_text() + "\n"
     return text
 
-# --- HELPER FUNCTION: CALL NVIDIA NIM API ---
+# --- HELPER FUNCTION: CALL NVIDIA Llama 3 via OpenAI SDK ---
 def analyze_esg_report(text, key):
-    invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
-    
-    headers = {
-      "Authorization": f"Bearer {key}",
-      "Accept": "application/json"
-    }
+    # Point the OpenAI client to NVIDIA's servers!
+    client = OpenAI(
+      base_url = "https://integrate.api.nvidia.com/v1",
+      api_key = key
+    )
     
     prompt = f"""
     You are an expert ESG AI Analyst. I am providing you with the first 15 pages of a company's sustainability/financial report.
     Read the text and grade the company based on the Nexus A.I.M. Methodology.
     
-    You MUST return your answer ONLY as a valid JSON object with the exact following structure. Do NOT include markdown formatting like ```json. Just return the raw curly braces.
+    You MUST return your answer ONLY as a valid JSON object with the exact following structure. Do NOT include markdown formatting like ```json. Just return the raw JSON.
     {{
         "company_name": "Extract company name here",
         "transparency_index": 50,
@@ -89,33 +88,21 @@ def analyze_esg_report(text, key):
     {text}
     """
     
-    payload = {
-      "model": "meta/llama-4-maverick-17b-128e-instruct", # Using the exact model from your snippet
-      "messages": [
+    response = client.chat.completions.create(
+      model="meta/llama-3.3-70b-instruct",
+      messages=[
           {"role": "system", "content": "You are a precise data extraction AI. You only output valid JSON. No explanations."},
           {"role": "user", "content": prompt}
       ],
-      "max_tokens": 1024,
-      "temperature": 0.2,
-      "top_p": 1.00,
-      "stream": False
-    }
-
-    # Send the request to NVIDIA
-    response = requests.post(invoke_url, headers=headers, json=payload)
-    
-    # --- FIX IS HERE: Changed status_size to status_code ---
-    if response.status_code != 200:
-        raise Exception(f"NVIDIA API Error (Code {response.status_code}): {response.text}")
+      temperature=0.2,
+      top_p=0.7,
+      max_tokens=1024,
+      stream=False
+    )
         
-    response_data = response.json()
+    result_text = response.choices[0].message.content.strip()
     
-    if 'choices' not in response_data:
-        raise Exception(f"Unexpected Response from NVIDIA: {response_data}")
-        
-    result_text = response_data['choices'][0]['message']['content'].strip()
-    
-    # Clean up the output to ensure it is perfect JSON (Llama sometimes adds markdown formatting)
+    # Clean up the output to ensure it is perfect JSON
     result_text = re.sub(r'^```json\s*', '', result_text, flags=re.IGNORECASE)
     result_text = re.sub(r'^```\s*', '', result_text)
     result_text = re.sub(r'\s*```$', '', result_text)
@@ -139,7 +126,7 @@ if analyze_btn:
         with st.spinner("📖 Reading PDF and extracting text..."):
             pdf_text = extract_text_from_pdf(uploaded_file)
             
-        with st.spinner("🧠 NVIDIA Llama Agents analyzing report... (this takes 10-20 seconds)"):
+        with st.spinner("🧠 NVIDIA Llama 3.3 analyzing report... (this takes 10-20 seconds)"):
             try:
                 data = analyze_esg_report(pdf_text, api_key)
             except Exception as e:
@@ -227,4 +214,4 @@ if analyze_btn:
         )
         st.plotly_chart(fig_scatter, use_container_width=True)
         
-    st.info("💡 **Methodology Note:** This dashboard utilizes a proprietary fusion of Double Materiality (EcoVadis/SASB) and Unmanaged Risk gap analysis (Sustainalytics/MSCI) powered by NVIDIA NIM & Llama models.")
+    st.info("💡 **Methodology Note:** This dashboard utilizes a proprietary fusion of Double Materiality (EcoVadis/SASB) and Unmanaged Risk gap analysis (Sustainalytics/MSCI) powered by NVIDIA NIM & Llama 3.3.")
