@@ -5,8 +5,8 @@ import plotly.graph_objects as go
 import json
 import time
 import PyPDF2
+import requests
 import re
-import google.generativeai as genai
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Nexus ESG AI Benchmarking", page_icon="🌍", layout="wide")
@@ -18,8 +18,8 @@ st.markdown("Upload a company's sustainability report, and our AI agents will pa
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Configuration")
-    api_key = st.text_input("Google Gemini API Key", type="password")
-    st.markdown("[Get a free Gemini API key here](https://aistudio.google.com/app/apikey)")
+    api_key = st.text_input("NVIDIA NIM API Key", type="password")
+    st.markdown("Powered by **NVIDIA NIM & Llama**")
     use_demo = st.checkbox("Enable Demo Mode (Instant Charts)", value=False)
     uploaded_file = st.file_uploader("Upload ESG Report (PDF)", type=["pdf"])
     analyze_btn = st.button("Run AI Analysis")
@@ -43,15 +43,20 @@ demo_json = {
 def extract_text_from_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
-    # Extract 15 pages for a good sample size
+    # Llama 128k context can handle massive text. We'll grab 15 pages.
     num_pages = min(15, len(reader.pages))
     for i in range(num_pages):
         text += reader.pages[i].extract_text() + "\n"
     return text
 
-# --- HELPER FUNCTION: CALL GOOGLE GEMINI ---
+# --- HELPER FUNCTION: CALL NVIDIA NIM API ---
 def analyze_esg_report(text, key):
-    genai.configure(api_key=key)
+    invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
+    
+    headers = {
+      "Authorization": f"Bearer {key}",
+      "Accept": "application/json"
+    }
     
     prompt = f"""
     You are an expert ESG AI Analyst. I am providing you with the first 15 pages of a company's sustainability/financial report.
@@ -84,17 +89,26 @@ def analyze_esg_report(text, key):
     {text}
     """
     
-    # Bulletproof fallback mechanism for Google's API model names
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        response = model.generate_content(prompt)
-    except Exception as e:
-        print(f"Flash failed, falling back to Pro. Error: {e}")
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
+    payload = {
+      "model": "meta/llama-4-maverick-17b-128e-instruct",
+      "messages": [
+          {"role": "system", "content": "You are a precise data extraction AI. You only output valid JSON. No explanations."},
+          {"role": "user", "content": prompt}
+      ],
+      "max_tokens": 1024, # Increased to ensure the JSON does not get cut off
+      "temperature": 0.2, # Lowered temperature to make the AI more analytical and less "creative"
+      "top_p": 1.00,
+      "stream": False
+    }
+
+    response = requests.post(invoke_url, headers=headers, json=payload)
+    
+    if response.status_size != 200 and 'choices' not in response.json():
+        raise Exception(f"NVIDIA API Error: {response.text}")
         
-    # Clean up the output to ensure it is perfect JSON
-    result_text = response.text.strip()
+    result_text = response.json()['choices'][0]['message']['content'].strip()
+    
+    # Clean up the output to ensure it is perfect JSON (Llama sometimes adds markdown)
     result_text = re.sub(r'^```json\s*', '', result_text, flags=re.IGNORECASE)
     result_text = re.sub(r'^```\s*', '', result_text)
     result_text = re.sub(r'\s*```$', '', result_text)
@@ -109,7 +123,7 @@ if analyze_btn:
             data = demo_json
     else:
         if not api_key:
-            st.error("❌ Please enter your Google Gemini API key in the sidebar.")
+            st.error("❌ Please enter your NVIDIA API key in the sidebar.")
             st.stop()
         if not uploaded_file:
             st.error("❌ Please upload a PDF report.")
@@ -118,7 +132,7 @@ if analyze_btn:
         with st.spinner("📖 Reading PDF and extracting text..."):
             pdf_text = extract_text_from_pdf(uploaded_file)
             
-        with st.spinner("🧠 Gemini AI Agents analyzing report... (this takes 10-20 seconds)"):
+        with st.spinner("🧠 NVIDIA Llama Agents analyzing report... (this takes 10-20 seconds)"):
             try:
                 data = analyze_esg_report(pdf_text, api_key)
             except Exception as e:
@@ -206,4 +220,4 @@ if analyze_btn:
         )
         st.plotly_chart(fig_scatter, use_container_width=True)
         
-    st.info("💡 **Methodology Note:** This dashboard utilizes a proprietary fusion of Double Materiality (EcoVadis/SASB) and Unmanaged Risk gap analysis (Sustainalytics/MSCI) powered by Google Gemini.")
+    st.info("💡 **Methodology Note:** This dashboard utilizes a proprietary fusion of Double Materiality (EcoVadis/SASB) and Unmanaged Risk gap analysis (Sustainalytics/MSCI) powered by NVIDIA NIM & Llama models.")
