@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import json
 import time
 import PyPDF2
-from openai import OpenAI
+import google.generativeai as genai
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Nexus ESG AI Benchmarking", page_icon="🌍", layout="wide")
@@ -17,8 +17,9 @@ st.markdown("Upload a company's sustainability report, and our AI agents will pa
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Configuration")
-    api_key = st.text_input("OpenAI API Key", type="password")
-    use_demo = st.checkbox("Enable Demo Mode (Instant Charts)", value=False) # Turned off by default now!
+    api_key = st.text_input("Google Gemini API Key", type="password")
+    st.markdown("[Get a free Gemini API key here](https://aistudio.google.com/app/apikey)")
+    use_demo = st.checkbox("Enable Demo Mode (Instant Charts)", value=False)
     uploaded_file = st.file_uploader("Upload ESG Report (PDF)", type=["pdf"])
     analyze_btn = st.button("Run AI Analysis")
 
@@ -41,21 +42,27 @@ demo_json = {
 def extract_text_from_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
-    # Extracting only the first 10 pages to avoid OpenAI token limits and save costs
-    num_pages = min(10, len(reader.pages))
+    # We can do 15 pages now because Gemini's free tier is huge!
+    num_pages = min(15, len(reader.pages))
     for i in range(num_pages):
         text += reader.pages[i].extract_text() + "\n"
     return text
 
-# --- HELPER FUNCTION: CALL OPENAI ---
+# --- HELPER FUNCTION: CALL GOOGLE GEMINI ---
 def analyze_esg_report(text, key):
-    client = OpenAI(api_key=key)
+    genai.configure(api_key=key)
+    
+    # We use Gemini 1.5 Flash and force it to return valid JSON
+    model = genai.GenerativeModel(
+        'gemini-1.5-flash',
+        generation_config={"response_mime_type": "application/json"}
+    )
     
     prompt = f"""
-    You are an expert ESG AI Analyst. I am providing you with the first 10 pages of a company's sustainability/financial report.
+    You are an expert ESG AI Analyst. I am providing you with the first 15 pages of a company's sustainability/financial report.
     Read the text and grade the company based on the Nexus A.I.M. Methodology.
     
-    You MUST return your answer ONLY as a JSON object with the exact following structure. Do not add markdown formatting or extra text.
+    You MUST return your answer ONLY as a JSON object with the exact following structure.
     {{
         "company_name": "Extract company name here",
         "transparency_index": [A score from 0 to 100 representing the ratio of hard data vs marketing fluff],
@@ -82,16 +89,8 @@ def analyze_esg_report(text, key):
     {text}
     """
     
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo", # using 3.5 to keep it fast and cheap
-        response_format={ "type": "json_object" },
-        messages=[
-            {"role": "system", "content": "You are a strict ESG auditor outputting JSON."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-    
-    return json.loads(response.choices[0].message.content)
+    response = model.generate_content(prompt)
+    return json.loads(response.text)
 
 # --- MAIN APP LOGIC ---
 if analyze_btn:
@@ -101,7 +100,7 @@ if analyze_btn:
             data = demo_json
     else:
         if not api_key:
-            st.error("❌ Please enter your OpenAI API key in the sidebar.")
+            st.error("❌ Please enter your Google Gemini API key in the sidebar.")
             st.stop()
         if not uploaded_file:
             st.error("❌ Please upload a PDF report.")
@@ -110,7 +109,7 @@ if analyze_btn:
         with st.spinner("📖 Reading PDF and extracting text..."):
             pdf_text = extract_text_from_pdf(uploaded_file)
             
-        with st.spinner("🧠 AI Agents analyzing report based on Nexus Methodology... (this takes 10-20 seconds)"):
+        with st.spinner("🧠 Gemini AI Agents analyzing report... (this takes 10-20 seconds)"):
             try:
                 data = analyze_esg_report(pdf_text, api_key)
             except Exception as e:
@@ -198,4 +197,4 @@ if analyze_btn:
         )
         st.plotly_chart(fig_scatter, use_container_width=True)
         
-    st.info("💡 **Methodology Note:** This dashboard utilizes a proprietary fusion of Double Materiality (EcoVadis/SASB) and Unmanaged Risk gap analysis (Sustainalytics/MSCI) powered by Large Language Models.")
+    st.info("💡 **Methodology Note:** This dashboard utilizes a proprietary fusion of Double Materiality (EcoVadis/SASB) and Unmanaged Risk gap analysis (Sustainalytics/MSCI) powered by Google Gemini.")
