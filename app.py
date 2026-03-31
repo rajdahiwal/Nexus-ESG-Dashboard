@@ -90,25 +90,32 @@ def analyze_esg_report(text, key):
     """
     
     payload = {
-      "model": "meta/llama-4-maverick-17b-128e-instruct",
+      "model": "meta/llama-4-maverick-17b-128e-instruct", # Using the exact model from your snippet
       "messages": [
           {"role": "system", "content": "You are a precise data extraction AI. You only output valid JSON. No explanations."},
           {"role": "user", "content": prompt}
       ],
-      "max_tokens": 1024, # Increased to ensure the JSON does not get cut off
-      "temperature": 0.2, # Lowered temperature to make the AI more analytical and less "creative"
+      "max_tokens": 1024,
+      "temperature": 0.2,
       "top_p": 1.00,
       "stream": False
     }
 
+    # Send the request to NVIDIA
     response = requests.post(invoke_url, headers=headers, json=payload)
     
-    if response.status_size != 200 and 'choices' not in response.json():
-        raise Exception(f"NVIDIA API Error: {response.text}")
+    # --- FIX IS HERE: Changed status_size to status_code ---
+    if response.status_code != 200:
+        raise Exception(f"NVIDIA API Error (Code {response.status_code}): {response.text}")
         
-    result_text = response.json()['choices'][0]['message']['content'].strip()
+    response_data = response.json()
     
-    # Clean up the output to ensure it is perfect JSON (Llama sometimes adds markdown)
+    if 'choices' not in response_data:
+        raise Exception(f"Unexpected Response from NVIDIA: {response_data}")
+        
+    result_text = response_data['choices'][0]['message']['content'].strip()
+    
+    # Clean up the output to ensure it is perfect JSON (Llama sometimes adds markdown formatting)
     result_text = re.sub(r'^```json\s*', '', result_text, flags=re.IGNORECASE)
     result_text = re.sub(r'^```\s*', '', result_text)
     result_text = re.sub(r'\s*```$', '', result_text)
@@ -136,7 +143,7 @@ if analyze_btn:
             try:
                 data = analyze_esg_report(pdf_text, api_key)
             except Exception as e:
-                st.error(f"❌ AI Parsing Error: {e}. Please try again.")
+                st.error(f"❌ AI Parsing Error: {e}")
                 st.stop()
             
     st.success(f"✅ Analysis Complete for: **{data['company_name']}**")
