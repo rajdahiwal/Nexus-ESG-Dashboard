@@ -15,11 +15,45 @@ st.set_page_config(page_title="Nexus ESG AI Benchmarking", page_icon="🌍", lay
 st.title("🌍 Nexus AI: ESG Automated Benchmarking")
 st.markdown("Upload a company's sustainability report, and our AI agents will parse the PDF, strip away greenwashing, and benchmark the data using the **A.I.M. Methodology**.")
 
+# --- HELPER FUNCTION: TEST API KEY ---
+def test_nvidia_key(key):
+    clean_key = key.strip()
+    client = OpenAI(
+      base_url="https://integrate.api.nvidia.com/v1",
+      api_key=clean_key
+    )
+    try:
+        # Send a tiny, fast request just to check authentication
+        response = client.chat.completions.create(
+            model="meta/llama-3.3-70b-instruct",
+            messages=[{"role": "user", "content": "Hello, are you connected?"}],
+            max_tokens=10
+        )
+        return True, "✅ Connection Successful! The API key is valid and the Llama 3.3 model is ready."
+    except Exception as e:
+        return False, f"❌ Connection Failed. Error details: {e}"
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Configuration")
     api_key = st.text_input("NVIDIA NIM API Key", type="password")
-    st.markdown("Powered by **NVIDIA NIM & Llama 3.3 70B**")
+    st.markdown("*(NVIDIA keys usually start with `nvapi-`)*")
+    
+    # NEW FEATURE: Test Button
+    if st.button("🔌 Test API Key Connection"):
+        if not api_key:
+            st.warning("Please paste an API key first.")
+        else:
+            with st.spinner("Testing connection to NVIDIA servers..."):
+                success, message = test_nvidia_key(api_key)
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+                    st.info("Make sure you copied the entire key and haven't revoked it on the NVIDIA dashboard.")
+                    
+    st.divider()
+    
     use_demo = st.checkbox("Enable Demo Mode (Instant Charts)", value=False)
     uploaded_file = st.file_uploader("Upload ESG Report (PDF)", type=["pdf"])
     analyze_btn = st.button("Run AI Analysis")
@@ -43,7 +77,6 @@ demo_json = {
 def extract_text_from_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
-    # Extract 15 pages 
     num_pages = min(15, len(reader.pages))
     for i in range(num_pages):
         text += reader.pages[i].extract_text() + "\n"
@@ -51,13 +84,10 @@ def extract_text_from_pdf(file):
 
 # --- HELPER FUNCTION: CALL NVIDIA Llama 3 via OpenAI SDK ---
 def analyze_esg_report(text, key):
-    # CLEAN THE KEY: This removes any accidental invisible spaces you pasted!
     clean_key = key.strip()
-    
-    # Point the OpenAI client to NVIDIA's servers
     client = OpenAI(
-      base_url = "https://integrate.api.nvidia.com/v1",
-      api_key = clean_key
+      base_url="https://integrate.api.nvidia.com/v1",
+      api_key=clean_key
     )
     
     prompt = f"""
@@ -130,7 +160,7 @@ if analyze_btn:
             try:
                 pdf_text = extract_text_from_pdf(uploaded_file)
             except Exception as e:
-                st.error(f"❌ PDF Reading Error: The file might be corrupted or protected. Try a different PDF. Details: {e}")
+                st.error(f"❌ PDF Reading Error: {e}")
                 st.stop()
             
         with st.spinner("🧠 NVIDIA Llama 3.3 analyzing report... (this takes 10-20 seconds)"):
@@ -138,7 +168,6 @@ if analyze_btn:
                 data = analyze_esg_report(pdf_text, api_key)
             except Exception as e:
                 st.error(f"❌ AI Parsing Error: {e}")
-                st.info("💡 TIP: If you see a '401 Unauthorized' error, your API key is invalid, revoked, or typed incorrectly. Please generate a new key on the NVIDIA website.")
                 st.stop()
             
     st.success(f"✅ Analysis Complete for: **{data['company_name']}**")
@@ -155,12 +184,12 @@ if analyze_btn:
             value = data["transparency_index"],
             domain = {'x':[0, 1], 'y': [0, 1]},
             gauge = {
-                'axis': {'range': [None, 100]},
+                'axis': {'range':[None, 100]},
                 'bar': {'color': "darkblue"},
-                'steps': [
+                'steps':[
                     {'range': [0, 40], 'color': "lightcoral"},
                     {'range': [40, 70], 'color': "khaki"},
-                    {'range': [70, 100], 'color': "lightgreen"}]
+                    {'range':[70, 100], 'color': "lightgreen"}]
             }
         ))
         fig_gauge.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10))
@@ -170,7 +199,7 @@ if analyze_btn:
     with col2:
         st.subheader("2. P.A.R. Management Audit")
         st.markdown("Does the company just have policies, or actual results?")
-        categories = ['Policies', 'Actions', 'Results']
+        categories =['Policies', 'Actions', 'Results']
         fig_radar = go.Figure()
         fig_radar.add_trace(go.Scatterpolar(
             r=[data["par_scores"]["Policies"], data["par_scores"]["Actions"], data["par_scores"]["Results"]],
