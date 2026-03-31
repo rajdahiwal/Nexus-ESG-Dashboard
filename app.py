@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import json
 import time
 import PyPDF2
+import re
 import google.generativeai as genai
 
 # --- PAGE CONFIG ---
@@ -42,7 +43,7 @@ demo_json = {
 def extract_text_from_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
-    # We can do 15 pages now because Gemini's free tier is huge!
+    # Extract 15 pages for a good sample size
     num_pages = min(15, len(reader.pages))
     for i in range(num_pages):
         text += reader.pages[i].extract_text() + "\n"
@@ -52,36 +53,30 @@ def extract_text_from_pdf(file):
 def analyze_esg_report(text, key):
     genai.configure(api_key=key)
     
-    # We use Gemini 1.5 Flash and force it to return valid JSON
-    model = genai.GenerativeModel(
-        'gemini-1.5-flash',
-        generation_config={"response_mime_type": "application/json"}
-    )
-    
     prompt = f"""
     You are an expert ESG AI Analyst. I am providing you with the first 15 pages of a company's sustainability/financial report.
     Read the text and grade the company based on the Nexus A.I.M. Methodology.
     
-    You MUST return your answer ONLY as a JSON object with the exact following structure.
+    You MUST return your answer ONLY as a valid JSON object with the exact following structure. Do NOT include markdown formatting like ```json. Just return the raw curly braces.
     {{
         "company_name": "Extract company name here",
-        "transparency_index": [A score from 0 to 100 representing the ratio of hard data vs marketing fluff],
+        "transparency_index": 50,
         "unmanaged_risk": {{
-            "inherent_exposure": [Score 0-100 based on their industry risk],
-            "policies_score": [Negative number between 0 and -20],
-            "actions_score": [Negative number between 0 and -30],
-            "results_score": [Negative number between 0 and -50],
-            "final_unmanaged_risk": [inherent_exposure + policies + actions + results]
+            "inherent_exposure": 80,
+            "policies_score": -15,
+            "actions_score": -20,
+            "results_score": -10,
+            "final_unmanaged_risk": 35
         }},
         "par_scores": {{
-            "Policies": [Score 0-100],
-            "Actions": [Score 0-100],
-            "Results": [Score 0-100]
+            "Policies": 70,
+            "Actions": 50,
+            "Results": 30
         }},
         "materiality": [
-            {{"topic": "Extract Top Topic 1", "financial_risk": [0-10], "world_impact": [0-10]}},
-            {{"topic": "Extract Top Topic 2", "financial_risk": [0-10], "world_impact": [0-10]}},
-            {{"topic": "Extract Top Topic 3", "financial_risk": [0-10], "world_impact": [0-10]}}
+            {{"topic": "Extract Top Topic 1", "financial_risk": 8, "world_impact": 7}},
+            {{"topic": "Extract Top Topic 2", "financial_risk": 6, "world_impact": 9}},
+            {{"topic": "Extract Top Topic 3", "financial_risk": 5, "world_impact": 8}}
         ]
     }}
     
@@ -89,8 +84,22 @@ def analyze_esg_report(text, key):
     {text}
     """
     
-    response = model.generate_content(prompt)
-    return json.loads(response.text)
+    # Bulletproof fallback mechanism for Google's API model names
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        response = model.generate_content(prompt)
+    except Exception as e:
+        print(f"Flash failed, falling back to Pro. Error: {e}")
+        model = genai.GenerativeModel('gemini-pro')
+        response = model.generate_content(prompt)
+        
+    # Clean up the output to ensure it is perfect JSON
+    result_text = response.text.strip()
+    result_text = re.sub(r'^```json\s*', '', result_text, flags=re.IGNORECASE)
+    result_text = re.sub(r'^```\s*', '', result_text)
+    result_text = re.sub(r'\s*```$', '', result_text)
+    
+    return json.loads(result_text)
 
 # --- MAIN APP LOGIC ---
 if analyze_btn:
@@ -113,7 +122,7 @@ if analyze_btn:
             try:
                 data = analyze_esg_report(pdf_text, api_key)
             except Exception as e:
-                st.error(f"API Error: {e}")
+                st.error(f"❌ AI Parsing Error: {e}. Please try again.")
                 st.stop()
             
     st.success(f"✅ Analysis Complete for: **{data['company_name']}**")
