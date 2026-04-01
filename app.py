@@ -76,7 +76,13 @@ demo_json = {
         "Potential labor union strikes due to stagnant wages in legacy divisions."
     ],
     "transparency_index": 65,
-    "unmanaged_risk": {"inherent_exposure": 80, "policies_score": -20, "actions_score": -15, "results_score": -15, "final_unmanaged_risk": 30},
+    "unmanaged_risk": {
+        "inherent_exposure": 80, 
+        "policies_score": -20, 
+        "actions_score": -15, 
+        "results_score": -15, 
+        "final_unmanaged_risk": 30
+    },
     "materiality":[
         {"topic": "Carbon Emissions", "financial_risk": 9, "world_impact": 8},
         {"topic": "Labor Rights", "financial_risk": 6, "world_impact": 9},
@@ -88,7 +94,7 @@ demo_json = {
 def extract_text_from_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
-    num_pages = min(50, len(reader.pages)) # Upgraded to 50 pages!
+    num_pages = min(50, len(reader.pages))
     for i in range(num_pages):
         text += reader.pages[i].extract_text() + "\n"
     return text
@@ -99,7 +105,6 @@ def analyze_esg_report(text, key):
     invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {clean_key}", "Accept": "application/json"}
     
-    # THE PROMPT: Baking in the Methodology
     prompt = f"""
     You are a Senior ESG Investment Auditor. I am providing you with up to 50 pages of a company's sustainability report.
     You must evaluate the company using the "Nexus A.I.M. Methodology" (Assess, Integrate, Measure).
@@ -115,7 +120,7 @@ def analyze_esg_report(text, key):
     Exact JSON structure required:
     {{
         "company_name": "Name",
-        "kpi_quality": "Laggard/Average/Leader",
+        "kpi_quality": "Average",
         "overall_score": 75,
         "esg_scores": {{"environmental": 80, "social": 60, "governance": 70}},
         "esg_justifications": {{"environmental": "1 sentence reason", "social": "1 sentence reason", "governance": "1 sentence reason"}},
@@ -144,7 +149,7 @@ def analyze_esg_report(text, key):
           {"role": "user", "content": prompt}
       ],
       "temperature": 0.1,
-      "max_tokens": 2048, # Increased to handle the larger output text
+      "max_tokens": 2048,
       "stream": False
     }
 
@@ -209,9 +214,17 @@ if analyze_btn:
             "Pillar": ["Environmental", "Social", "Governance"],
             "Score": [data['esg_scores']['environmental'], data['esg_scores']['social'], data['esg_scores']['governance']]
         })
-        fig_bar = px.bar(df_esg, x="Pillar", y="Score", color="Pillar", 
-                         color_discrete_map={"Environmental":"#2ca02c", "Social":"#1f77b4", "Governance":"#ff7f0e"})
-        fig_bar.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10))
+        fig_bar = px.bar(
+            df_esg, 
+            x="Pillar", 
+            y="Score", 
+            color="Pillar", 
+            color_discrete_map={"Environmental":"#2ca02c", "Social":"#1f77b4", "Governance":"#ff7f0e"}
+        )
+        fig_bar.update_layout(
+            height=300, 
+            margin=dict(l=10, r=10, t=10, b=10)
+        )
         st.plotly_chart(fig_bar, use_container_width=True)
         
         with st.expander("📝 Read AI Pillar Justifications"):
@@ -222,10 +235,18 @@ if analyze_btn:
     with col2:
         st.markdown("#### Product Portfolio: Green vs Carbon-Intensive")
         df_prod = pd.DataFrame(data["product_analysis"])
-        fig_pie = px.pie(df_prod, values='percentage', names='category', color='type',
-                         color_discrete_map={"Green":"#2ca02c", "Neutral":"#c7c7c7", "Carbon-Intensive":"#d62728"},
-                         hole=0.4)
-        fig_pie.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10))
+        fig_pie = px.pie(
+            df_prod, 
+            values='percentage', 
+            names='category', 
+            color='type',
+            color_discrete_map={"Green":"#2ca02c", "Neutral":"#c7c7c7", "Carbon-Intensive":"#d62728"},
+            hole=0.4
+        )
+        fig_pie.update_layout(
+            height=300, 
+            margin=dict(l=10, r=10, t=10, b=10)
+        )
         st.plotly_chart(fig_pie, use_container_width=True)
 
     st.divider()
@@ -236,7 +257,81 @@ if analyze_btn:
     with col3:
         st.markdown("#### Double Materiality Matrix")
         df_mat = pd.DataFrame(data["materiality"])
-        fig_scatter = px.scatter(df_mat, x="financial_risk", y="world_impact", text="topic", 
-                                 size=[15]*len(df_mat), color="world_impact", color_continuous_scale="Reds")
+        fig_scatter = px.scatter(
+            df_mat, 
+            x="financial_risk", 
+            y="world_impact", 
+            text="topic", 
+            size=[15]*len(df_mat), 
+            color="world_impact", 
+            color_continuous_scale="Reds"
+        )
         fig_scatter.update_traces(textposition='top center')
-        fig_scatter.update_layout(xaxis_title="Financial Materiality (Risk to Business)", yaxis_title="Impact Materiality (Risk to World)",
+        fig_scatter.update_layout(
+            xaxis_title="Financial Materiality (Risk to Business)",
+            yaxis_title="Impact Materiality (Risk to World)",
+            xaxis=dict(range=[0, 10]), 
+            yaxis=dict(range=[0, 10]),
+            height=350, 
+            margin=dict(l=10, r=10, t=10, b=10)
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
+    with col4:
+        st.markdown("#### Unmanaged ESG Risk (Industry vs Actions)")
+        ur = data["unmanaged_risk"]
+        fig_waterfall = go.Figure(go.Waterfall(
+            name="Risk", 
+            orientation="v", 
+            measure=["absolute", "relative", "relative", "relative", "total"],
+            x=["Inherent Risk", "Policies", "Actions", "Results", "Unmanaged Risk"], 
+            textposition="outside",
+            y=[ur["inherent_exposure"], ur["policies_score"], ur["actions_score"], ur["results_score"], ur["final_unmanaged_risk"]],
+            connector={"line":{"color":"rgb(63, 63, 63)"}}, 
+            decreasing={"marker":{"color":"#2ca02c"}}, 
+            increasing={"marker":{"color":"#d62728"}}, 
+            totals={"marker":{"color":"#1f77b4"}}
+        ))
+        fig_waterfall.update_layout(
+            height=350, 
+            margin=dict(l=10, r=10, t=10, b=10)
+        )
+        st.plotly_chart(fig_waterfall, use_container_width=True)
+
+    st.divider()
+
+    # --- ROW 4: THREATS & DOWNLOAD ---
+    st.markdown("### ⚠️ Investment Threats & Climate Resilience")
+    st.metric("Climate Crisis Resilience Score", f"{data['climate_resilience']}/100")
+    
+    st.error("**Top 3 Red Flags / Threats to consider before investing:**")
+    for threat in data["investment_threats"]:
+        st.markdown(f"- {threat}")
+
+    st.divider()
+    
+    # --- EXPORT REPORT FEATURE ---
+    report_text = f"""
+    ================================================
+    NEXUS AI - ESG AUDIT REPORT
+    ================================================
+    Company: {data['company_name']}
+    Overall Rating: {data['kpi_quality']} (Score: {data['overall_score']}/100)
+    Climate Resilience: {data['climate_resilience']}/100
+    
+    --- E, S, G BREAKDOWN ---
+    Environmental: {data['esg_scores']['environmental']} - {data['esg_justifications']['environmental']}
+    Social: {data['esg_scores']['social']} - {data['esg_justifications']['social']}
+    Governance: {data['esg_scores']['governance']} - {data['esg_justifications']['governance']}
+    
+    --- TOP INVESTMENT THREATS ---
+    """
+    for t in data['investment_threats']: report_text += f"\n- {t}"
+    
+    st.download_button(
+        label="📥 Download AI Audited Report (TXT)",
+        data=report_text,
+        file_name=f"{data['company_name'].replace(' ', '_')}_ESG_Audit.txt",
+        mime="text/plain",
+        type="primary"
+    )
